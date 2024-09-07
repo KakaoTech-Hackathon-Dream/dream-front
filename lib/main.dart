@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hackathon/controller/api_provider.dart';
 import 'package:hackathon/controller/postit_provider.dart';
 import 'package:hackathon/view/home_page.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,8 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => FadeProvider()),
         ChangeNotifierProvider(create: (_) => PostitProvider()),
+        ChangeNotifierProvider(create: (_) => ApiProvider()),
+
       ],
       child: MyApp(),
     ),

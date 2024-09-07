@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:hackathon/controller/api_provider.dart';
 import 'package:provider/provider.dart';
 import '../components/butterfly_animation.dart';
 import '../components/page_navigation_buttons.dart';
@@ -6,6 +10,8 @@ import '../components/postit_page_view.dart';
 import '../controller/fade_provider.dart';
 import '../controller/postit_provider.dart';
 import 'drawing_page.dart';
+import 'package:http/http.dart' as http;
+
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -18,6 +24,7 @@ class HomePageState extends State<HomePage> with SingleTickerProviderStateMixin 
   final PageController _pageController = PageController();
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  late final http.Response response;
 
   @override
   void initState() {
@@ -43,6 +50,8 @@ class HomePageState extends State<HomePage> with SingleTickerProviderStateMixin 
   Widget build(BuildContext context) {
     final fadeProvider = Provider.of<FadeProvider>(context);
     final postitProvider = Provider.of<PostitProvider>(context);
+    final apiProvider = Provider.of<ApiProvider>(context);
+
 
     void nextPage() {
       if (postitProvider.currentPage < 2) {
@@ -64,9 +73,43 @@ class HomePageState extends State<HomePage> with SingleTickerProviderStateMixin 
       }
     }
 
-    void lastPage() {
+    Future<void> lastPage() async {
       fadeProvider.startFadingToWhite(_animationController);
       _animationController.forward();
+
+      try {
+        response = await http.post(
+        Uri.parse("http://ec2-3-38-111-246.ap-northeast-2.compute.amazonaws.com:8080/api/story"),
+        headers: <String, String>{
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'job': postitProvider.texts[0],
+          'text': postitProvider.texts[1],
+        }));
+        if (response.statusCode != 200) {
+          print("Error response: ${response.body}");
+        } else {
+          // 한글을 UTF-8로 디코딩
+          final decodedBody = utf8.decode(response.bodyBytes);
+          print("success response: $decodedBody");
+
+          // JSON 파싱
+          var jsonResponse = jsonDecode(decodedBody);
+
+          // JSON 파싱
+
+          // 각 변수에 할당
+          apiProvider.setStory(jsonResponse['story'] ?? "");
+          apiProvider.setFlag(jsonResponse['flag'] ?? false);
+          apiProvider.setId(jsonResponse['id'] ?? 0);
+          apiProvider.setJob(postitProvider.texts[0] ?? "");
+
+        }
+      } catch (e) {
+        print("Error: $e");
+      }
+
     }
 
     return GestureDetector(

@@ -1,9 +1,12 @@
-
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:hackathon/controller/api_provider.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -12,17 +15,13 @@ import '../controller/fade_provider.dart';
 import '../controller/postit_provider.dart';
 import 'package:flutter/cupertino.dart';
 
-List<String> mock = [
-  "ㅇㅇ",
-  "어릴 적부터 호기심이 많았던 나는 책을 좋아하고 질문을 많이 했다. 학교에서는 친구들에게 배운 것을 알려주는 걸 즐겼고, 자연스럽게 가르치는 일에 관심이 생겼다. 대학에서는 교육학을 전공했고, 졸업 후에는 초등학교 교사가 되었다. 아이들을 만나면서 그들의 성장을 돕는 일이 큰 보람이 되었다. 시간이 지나면서 학생들의 다양한 가능성을 발견하고, 그들을 응원하는 것이 나의 사명임을 느끼게 되었다. 지금도 여전히 새로운 방법으로 더 나은 교육을 고민하고 있다.",
-  "bbbbbb",
-  "cccccc"
-];
-
 class DrawingPage extends StatefulWidget {
   final PageController pageController;
 
-  const DrawingPage({super.key, required this.pageController});
+  const DrawingPage({
+    super.key,
+    required this.pageController,
+  });
 
   @override
   State<DrawingPage> createState() => _DrawingPageState();
@@ -37,6 +36,9 @@ class _DrawingPageState extends State<DrawingPage>
   bool textAnimation = true;
   double _bookOpacity = 1.0; // Book()의 투명도 관리
   double _pictureOpacity = 0.0; // Picture()의 투명도 관리
+  bool flag = false;
+  int id = 0;
+  String image = "./assets/background/ai.png";
 
   @override
   void initState() {
@@ -70,7 +72,6 @@ class _DrawingPageState extends State<DrawingPage>
     if (_scrollController.hasClients) {
       final maxScrollExtent = _scrollController.position.maxScrollExtent;
       final currentScrollPosition = _scrollController.position.pixels;
-      print(maxScrollExtent);
       // 현재 스크롤 위치가 맨 아래가 아닐 경우에만 스크롤을 맨 아래로 보냄
       if (currentScrollPosition < maxScrollExtent) {
         _scrollController.animateTo(
@@ -81,7 +82,6 @@ class _DrawingPageState extends State<DrawingPage>
       }
     }
   }
-
 
   Future<void> _downloadImage() async {
     final status = await Permission.storage.request(); // 저장소 권한 요청
@@ -122,8 +122,11 @@ class _DrawingPageState extends State<DrawingPage>
 
   @override
   Widget build(BuildContext context) {
+
     final fadeProvider = Provider.of<FadeProvider>(context, listen: false);
     final postitProvider = Provider.of<PostitProvider>(context, listen: false);
+    final apiProvider = Provider.of<ApiProvider>(context, listen: false);
+
     final AnimationController animationController =
         fadeProvider.animationController!;
     if (textAnimation) {
@@ -138,6 +141,8 @@ class _DrawingPageState extends State<DrawingPage>
         fadeProvider.resetFading();
       });
     }
+
+    String desc = _pictureOpacity != 1 ? "이야기를 볼 수 없습니다" : "사진을 볼 수 없습니다";
 
     return Container(
       decoration: const BoxDecoration(
@@ -159,18 +164,100 @@ class _DrawingPageState extends State<DrawingPage>
                     padding: const EdgeInsets.only(right: 12.0),
                     child: GestureDetector(
                       onTap: () {
-                        if (_pictureOpacity == 1) {
-                          deskOut();
-                          setState(() {
-                            _bookOpacity = 1.0;
-                            _pictureOpacity = 0.0;
-                          });
-                        } else {
-                          setState(() {
-                            _bookOpacity = 0.0;
-                            _pictureOpacity = 1.0;
-                          });
-                        }
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return Container(
+                              decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(10)),
+                              child: AlertDialog(
+                                title: const Text(
+                                  "정말 그만 보시겠습니까?",
+                                  style: TextStyle(
+                                      fontFamily: "Bold", fontSize: 23),
+                                ),
+                                content: Text(
+                                  "더 이상 ${desc}!",
+                                  style: const TextStyle(fontFamily: "Light"),
+                                ),
+                                actions: <Widget>[
+                                  TextButton(
+                                    child: const Text(
+                                      "아니오",
+                                      style: TextStyle(
+                                          fontFamily: "Writing", fontSize: 25),
+                                    ),
+                                    onPressed: () {
+                                      Navigator.of(context)
+                                          .pop(); // AlertDialog 닫기
+                                    },
+                                  ),
+                                  SizedBox(
+                                    width: 10,
+                                  ),
+                                  TextButton(
+                                    child: const Text(
+                                      "네",
+                                      style: TextStyle(
+                                          fontFamily: "Writing", fontSize: 25),
+                                    ),
+                                    onPressed: () async {
+                                      if (_pictureOpacity == 1) {
+                                        deskOut();
+                                        setState(() {
+                                          _bookOpacity = 1.0;
+                                          _pictureOpacity = 0.0;
+                                        });
+                                        Navigator.of(context).pop();
+                                      } else {
+                                        Navigator.of(context).pop();
+                                        setState(() {
+                                          _bookOpacity = 0.0;
+                                          _pictureOpacity = 1.0;
+                                        });
+                                        try {
+                                          final http.Response response =
+                                              await http.post(
+                                            Uri.parse(
+                                                "http://ec2-3-38-111-246.ap-northeast-2.compute.amazonaws.com:8000/api/image"),
+                                            headers: <String, String>{
+                                              'Content-Type':
+                                                  'application/json',
+                                            },
+                                            body:
+                                                jsonEncode({'job': apiProvider.job}),
+                                          );
+                                          if (response.statusCode != 200) {
+                                            print(
+                                                "Error response: ${response.body}");
+                                          } else {
+                                            final decodedBody =
+                                                utf8.decode(response.bodyBytes);
+                                            print(
+                                                "success response: $decodedBody");
+
+                                            // JSON 파싱
+                                            var jsonResponse =
+                                                jsonDecode(decodedBody);
+
+                                            // JSON 파싱
+
+                                            // 각 변수에 할당
+                                            apiProvider.setImage(jsonResponse['image_url'] ?? image);
+                                          }
+                                        } on HttpException catch (error) {
+                                          print(
+                                              "HttpException: ${error.message}");
+                                        }
+                                      }
+                                      // AlertDialog 닫기
+                                    },
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
                       },
                       child: Container(
                         decoration: BoxDecoration(
@@ -197,12 +284,12 @@ class _DrawingPageState extends State<DrawingPage>
                   AnimatedOpacity(
                     opacity: _bookOpacity, // Book()의 투명도 설정
                     duration: const Duration(seconds: 1), // 서서히 사라짐
-                    child: (_bookOpacity > 0) ? Book() : Container(),
+                    child: (_bookOpacity > 0) ? Book(apiProvider) : Container(),
                   ),
                   AnimatedOpacity(
                     opacity: _pictureOpacity, // Picture()의 투명도 설정
                     duration: const Duration(seconds: 1), // 서서히 등장
-                    child: (_pictureOpacity > 0) ? Picture() : Container(),
+                    child: (_pictureOpacity > 0) ? Picture(apiProvider) : Container(),
                   ),
                 ],
               ),
@@ -220,7 +307,7 @@ class _DrawingPageState extends State<DrawingPage>
     );
   }
 
-  Widget Book() {
+  Widget Book(apiProvider) {
     return Stack(
       children: [
         Image.asset("./assets/background/book.png"),
@@ -239,26 +326,34 @@ class _DrawingPageState extends State<DrawingPage>
                   key: animatedTextKey,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    AnimatedTextKit(
-                      animatedTexts: [
-                        TyperAnimatedText(
-                          mock[curPage],
-                          textStyle: const TextStyle(
-                              fontFamily: "Writing", fontSize: 30),
-                          speed: const Duration(milliseconds: 50),
-                        ),
-                      ],
-                      repeatForever: false,
-                      isRepeatingAnimation: false,
-                      pause: const Duration(milliseconds: 100),
-                      displayFullTextOnTap: true,
-                      stopPauseOnTap: false,
-                      onFinished: () {
-                        setState(() {
-                          textAnimation = false;
-                        });
-                      },
-                    ),
+                    // Ensure that the `curPage` is within the valid range of `stories`
+                    if (apiProvider.stories.isNotEmpty && curPage < apiProvider.stories.length)
+                      AnimatedTextKit(
+                        animatedTexts: [
+                          TyperAnimatedText(
+                            apiProvider.stories[curPage],
+                            textStyle: const TextStyle(
+                                fontFamily: "Writing", fontSize: 30),
+                            speed: const Duration(milliseconds: 50),
+                          ),
+                        ],
+                        repeatForever: false,
+                        isRepeatingAnimation: false,
+                        pause: const Duration(milliseconds: 100),
+                        displayFullTextOnTap: true,
+                        stopPauseOnTap: false,
+                        onFinished: () {
+                          setState(() {
+                            textAnimation = false;
+                          });
+                        },
+                      )
+                    else
+                    // Show a placeholder or a loading message when there is no story available
+                      const Text(
+                        '글 쓰는 중',
+                        style: TextStyle(fontSize: 20, fontFamily: 'Writing'),
+                      ),
                   ],
                 ),
               ),
@@ -286,12 +381,12 @@ class _DrawingPageState extends State<DrawingPage>
               ),
             ),
           ),
-        if (_controller.currentIndex < 3)
+        if (!flag && _controller.currentIndex < 3)
           Positioned(
             right: 10,
             top: 230,
             child: GestureDetector(
-              onTap: () {
+              onTap: () async {
                 _controller.nextPage();
                 setState(() {
                   textAnimation = true;
@@ -299,6 +394,31 @@ class _DrawingPageState extends State<DrawingPage>
                     _updateText(curPage + 1);
                   });
                 });
+
+                try {
+                  final http.Response response = await http.post(
+                      Uri.parse(
+                          "http://ec2-3-38-111-246.ap-northeast-2.compute.amazonaws.com:8080/api/story/re"),
+                      headers: <String, String>{
+                        'Content-Type': 'application/json',
+                      },
+                      body: jsonEncode(
+                          {'storyIndex': curPage + 1, 'id': apiProvider.id}));
+                  if (response.statusCode != 200) {
+                    print("Error response: ${response.body}");
+                  } else {
+                    final decodedBody = utf8.decode(response.bodyBytes);
+                    print("success response: $decodedBody");
+
+                    var jsonResponse = jsonDecode(decodedBody);
+
+                    apiProvider.setStory(jsonResponse['story'] ?? "");
+                    apiProvider.setFlag(jsonResponse['flag'] ?? false);
+                    apiProvider.setId(jsonResponse['id'] ?? 0);
+                  }
+                } on HttpException catch (error) {
+                  print("HttpException: ${error.message}");
+                }
               },
               child: const Icon(
                 CupertinoIcons.arrowtriangle_right_fill,
@@ -323,7 +443,8 @@ class _DrawingPageState extends State<DrawingPage>
     );
   }
 
-  Widget Picture() {
+
+  Widget Picture(apiProvider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -334,8 +455,45 @@ class _DrawingPageState extends State<DrawingPage>
               children: [
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: Image.asset(
-                    "./assets/background/ai.png", // 여기에 실제 이미지를 넣어주세요
+                  child:
+                  Image.network(
+                    apiProvider.image,
+                    loadingBuilder: (BuildContext context, Widget child, ImageChunkEvent? loadingProgress) {
+                      if (loadingProgress == null) {
+                        return child; // 이미지가 로딩 완료되면 그대로 표시
+                      } else {
+                        // 로딩 중일 때 흰 배경에 "사진 로딩중" 텍스트 표시
+                        return Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Container(
+                            height: 350,
+                            color: Colors.white, // 흰색 배경
+                            child: const Center(
+                              child: Text(
+                                "사진 로딩중",
+                                style: TextStyle(fontFamily: 'Writing', fontSize: 30),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    errorBuilder: (BuildContext context, Object exception, StackTrace? stackTrace) {
+                      // 이미지 로드 실패 시 기본 이미지를 보여줍니다.
+                      return Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Container(
+                          height: 350,
+                          color: Colors.white, // 흰색 배경
+                          child: const Center(
+                            child: Text(
+                              "사진 로딩중",
+                              style: TextStyle(fontFamily: 'Writing', fontSize: 30),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
                 Image.asset(
@@ -355,8 +513,7 @@ class _DrawingPageState extends State<DrawingPage>
                       borderRadius: BorderRadius.circular(20),
                       color: Colors.white),
                   child: const Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 10.0, vertical: 3),
+                    padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 3),
                     child: Row(
                       children: [
                         Text(
@@ -370,25 +527,39 @@ class _DrawingPageState extends State<DrawingPage>
             ),
           ],
         ),
-
-        const SizedBox(height: 30,),
+        const SizedBox(
+          height: 30,
+        ),
         const Center(
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 12.0),
-            child: Text("추천해 Dream~", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 23, color: Color(0xff212121)),),
+            child: Text(
+              "추천해 Dream~",
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 23,
+                  color: Color(0xff212121)),
+            ),
           ),
         ),
-        const SizedBox(height: 10,),
+        const SizedBox(
+          height: 10,
+        ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  list(context, "인생을 개쳑하는 인생그래프 만들기", "교육 프로그램", "9월 6일 20:00 시작"),
-                  const SizedBox(height: 15,),
+                  list(context, "인생을 개쳑하는 인생그래프 만들기", "교육 프로그램",
+                      "9월 6일 20:00 시작"),
+                  const SizedBox(
+                    height: 15,
+                  ),
                   list(context, "카카오테크 부트캠프", "교육 프로그램", "9월 10일 20:00 시작"),
-                  const SizedBox(height: 15,),
+                  const SizedBox(
+                    height: 15,
+                  ),
                   list(context, "집가고싶다", "헤커톤 프로그램", "9월 30일 20:00 시작"),
                 ],
               ),
@@ -398,25 +569,32 @@ class _DrawingPageState extends State<DrawingPage>
       ],
     );
   }
-}
 
+}
 
 Widget list(context, String s1, String s2, String s3) {
   return Container(
     decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8)
-    ),
+        color: Colors.white, borderRadius: BorderRadius.circular(8)),
     width: MediaQuery.of(context).size.width,
-
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(s1, style: const TextStyle(fontWeight: FontWeight.bold),),
-          Text(s2, style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.w500),),
-          Text(s3, style: const TextStyle(fontWeight: FontWeight.w500),)
+          Text(
+            s1,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Text(
+            s2,
+            style: const TextStyle(
+                color: Colors.blue, fontWeight: FontWeight.w500),
+          ),
+          Text(
+            s3,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          )
         ],
       ),
     ),
